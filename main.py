@@ -383,7 +383,7 @@ def get_consent(pid):
     return jsonify({"patient_id": pid, "whatsapp_consent": True})
 
 
-@app.route('/MyCallAi/patients/<int:pid>/consent', methods=['POST'])
+@app.route('/MyCallAi/patients/<int:pid>/consent', methods=['POST', 'PUT'])
 def save_consent(pid):
     log(f"✅ تم حفظ موافقة المريض #{pid}")
     return jsonify({"status": "saved"})
@@ -397,7 +397,7 @@ def get_patient(pid):
     return jsonify({"message": "Not found"}), 404
 
 
-@app.route('/MyCallAi/patients/<int:pid>', methods=['POST'])
+@app.route('/MyCallAi/patients/<int:pid>', methods=['POST', 'PUT'])
 def update_patient(pid):
     global patients
     data = request.get_json() or {}
@@ -527,7 +527,7 @@ def confirm_appointment(aid):
     return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
 
 
-@app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST'])
+@app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST', 'PUT'])
 def cancel_appointment(aid):
     global appointments
     appt = next((a for a in appointments if a['id'] == aid), None)
@@ -537,7 +537,7 @@ def cancel_appointment(aid):
     return jsonify({"appointment_id": aid, "status": "cancelled", "message": "تم إلغاء الموعد بنجاح"})
 
 
-@app.route('/MyCallAi/appointments/<int:aid>/reschedule', methods=['POST'])
+@app.route('/MyCallAi/appointments/<int:aid>/reschedule', methods=['POST', 'PUT'])
 def reschedule_appointment(aid):
     global appointments
     data = request.get_json() or {}
