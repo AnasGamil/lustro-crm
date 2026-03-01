@@ -351,7 +351,9 @@ def search_patient():
 
 
 @app.route('/MyCallAi/patients/<int:pid>/insurance/eligibility')
-def insurance_eligibility(pid):
+@app.route('/MyCallAi/insurance/eligibility')
+def get_eligibility(pid=None):
+    pid = pid or request.args.get('patient_id')
     log(f"🏥 تم التحقق من أهلية التأمين للمريض #{pid}")
     return jsonify({"patient_id": pid, "eligible": True, "message": "التأمين ساري وفعّال"})
 
