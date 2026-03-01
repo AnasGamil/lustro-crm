@@ -528,6 +528,17 @@ def confirm_appointment(aid):
     log(f"✅ تم تأكيد الموعد لـ {name}")
     return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
 
+@app.route('/MyCallAi/appointments/confirm', methods=['POST'])
+def confirm_appointment_by_body():
+    global appointments
+    data = request.get_json() or {}
+    aid = data.get('hold_id') or data.get('appointment_id')
+    appt = next((a for a in appointments if str(a['id']) == str(aid)), None)
+    appointments = [dict(a, status='confirmed') if str(a['id']) == str(aid) else a for a in appointments]
+    name = appt['patient_name'] if appt else f"#{aid}"
+    log(f"✅ تم تأكيد الموعد لـ {name}")
+    return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
+
 
 @app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST', 'PUT'])
 def cancel_appointment(aid):
