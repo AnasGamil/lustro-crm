@@ -8,8 +8,6 @@ CORS(app)
 
 # ─────────────────────────────────────────────────────────────
 # IN-MEMORY DATABASE
-# This acts as your temporary database while testing.
-# All data lives here and updates in real time.
 # ─────────────────────────────────────────────────────────────
 
 patients = [
@@ -24,6 +22,7 @@ appointments = [
 
 notes = []
 activity_log = []
+debug_log = []
 
 specialties = [
     {"id": 1, "name": "تقويم الأسنان"},
@@ -42,8 +41,11 @@ doctors = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────────────────────
+
 def log(message):
-    """Add a new entry to the live activity log."""
     entry = {"time": datetime.now().strftime("%I:%M:%S %p"), "message": message}
     activity_log.insert(0, entry)
     if len(activity_log) > 50:
@@ -51,15 +53,57 @@ def log(message):
 
 
 def find_patient(pid):
-    return next((p for p in patients if p["id"] == int(pid)), None)
+    try:
+        return next((p for p in patients if p["id"] == int(pid)), None)
+    except (ValueError, TypeError):
+        return None
 
 
 def find_doctor(did):
-    return next((d for d in doctors if d["id"] == int(did)), None)
+    try:
+        return next((d for d in doctors if d["id"] == int(did)), None)
+    except (ValueError, TypeError):
+        return None
+
+
+def get_val(data, *keys):
+    """
+    Try multiple possible key names and return the first match.
+    Solves parameter naming mismatch between ElevenLabs and the CRM.
+    """
+    for key in keys:
+        if key in data and data[key] not in (None, '', 0):
+            return data[key]
+    return None
 
 
 # ─────────────────────────────────────────────────────────────
-# DASHBOARD
+# DEBUG — captures every request the agent makes
+# Open /api/debug in browser to see exactly what was sent
+# ─────────────────────────────────────────────────────────────
+
+@app.before_request
+def capture_request():
+    if request.path.startswith('/MyCallAi'):
+        entry = {
+            "time":   datetime.now().strftime("%I:%M:%S %p"),
+            "method": request.method,
+            "path":   request.path,
+            "params": dict(request.args),
+            "body":   request.get_json(silent=True) or {}
+        }
+        debug_log.insert(0, entry)
+        if len(debug_log) > 20:
+            debug_log.pop()
+
+
+@app.route('/api/debug')
+def api_debug():
+    return jsonify(debug_log)
+
+
+# ─────────────────────────────────────────────────────────────
+# DASHBOARD HTML
 # ─────────────────────────────────────────────────────────────
 
 DASHBOARD_HTML = """
@@ -72,89 +116,47 @@ DASHBOARD_HTML = """
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Segoe UI',Tahoma,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; }
-
-    header {
-      background:linear-gradient(135deg,#1e293b,#0f172a);
-      padding:18px 30px;
-      border-bottom:2px solid #6366f1;
-      display:flex; align-items:center; gap:14px;
-    }
+    header { background:linear-gradient(135deg,#1e293b,#0f172a); padding:18px 30px; border-bottom:2px solid #6366f1; display:flex; align-items:center; gap:14px; }
     header h1 { font-size:20px; color:#a5b4fc; }
     header p  { font-size:12px; color:#64748b; margin-top:2px; }
-    .live-dot {
-      width:10px; height:10px; background:#22c55e;
-      border-radius:50%; animation:pulse 1.5s infinite;
-    }
+    .live-dot { width:10px; height:10px; background:#22c55e; border-radius:50%; animation:pulse 1.5s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .badge-live {
-      background:#22c55e22; color:#22c55e;
-      border:1px solid #22c55e44;
-      padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
-    }
-
-    .stats {
-      display:grid; grid-template-columns:repeat(4,1fr);
-      gap:15px; padding:20px;
-    }
-    .stat {
-      background:#1e293b; border-radius:12px;
-      padding:18px 22px; border:1px solid #334155;
-      transition:transform .2s;
-    }
+    .badge-live { background:#22c55e22; color:#22c55e; border:1px solid #22c55e44; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:15px; padding:20px; }
+    .stat { background:#1e293b; border-radius:12px; padding:18px 22px; border:1px solid #334155; transition:transform .2s; }
     .stat:hover { transform:translateY(-2px); }
-    .stat-num   { font-size:30px; font-weight:700; color:#6366f1; }
+    .stat-num { font-size:30px; font-weight:700; color:#6366f1; }
     .stat-label { font-size:12px; color:#64748b; margin-top:4px; }
-
     .toolbar { padding:0 20px 15px; display:flex; align-items:center; gap:10px; }
-    .btn {
-      background:#6366f1; color:white; border:none;
-      padding:8px 20px; border-radius:8px; cursor:pointer;
-      font-size:13px; transition:background .2s;
-    }
+    .btn { background:#6366f1; color:white; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-size:13px; transition:background .2s; }
     .btn:hover { background:#4f46e5; }
     .btn-danger { background:#dc2626; }
     .btn-danger:hover { background:#b91c1c; }
-
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:0 20px 30px; }
-    .card {
-      background:#1e293b; border-radius:12px;
-      padding:20px; border:1px solid #334155;
-    }
+    .card { background:#1e293b; border-radius:12px; padding:20px; border:1px solid #334155; }
     .card.full { grid-column:1/-1; }
-    .card h2   { font-size:14px; color:#94a3b8; margin-bottom:15px; display:flex; align-items:center; gap:8px; }
-
+    .card h2 { font-size:14px; color:#94a3b8; margin-bottom:15px; display:flex; align-items:center; gap:8px; }
     table { width:100%; border-collapse:collapse; font-size:13px; }
-    th {
-      background:#0f172a; color:#64748b;
-      padding:10px 12px; text-align:right; font-weight:600;
-    }
+    th { background:#0f172a; color:#64748b; padding:10px 12px; text-align:right; font-weight:600; }
     td { padding:10px 12px; border-bottom:1px solid #0f172a; }
     tr:last-child td { border-bottom:none; }
     tr:hover td { background:#1e3a5f18; }
-
-    .badge {
-      padding:3px 10px; border-radius:20px;
-      font-size:11px; font-weight:600; display:inline-block;
-    }
-    .confirmed  { background:#16a34a22; color:#22c55e;  border:1px solid #22c55e44; }
-    .held       { background:#d9770622; color:#f97316;  border:1px solid #f9731644; }
-    .cancelled  { background:#dc262622; color:#f87171;  border:1px solid #f8717144; }
-    .rescheduled{ background:#7c3aed22; color:#a78bfa;  border:1px solid #a78bfa44; }
-    .booked     { background:#0369a122; color:#38bdf8;  border:1px solid #38bdf844; }
-    .active     { background:#16a34a22; color:#22c55e;  border:1px solid #22c55e44; }
-
-    .log-entry  { padding:9px 12px; border-bottom:1px solid #0f172a; font-size:12px; display:flex; gap:12px; }
+    .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; display:inline-block; }
+    .confirmed   { background:#16a34a22; color:#22c55e;  border:1px solid #22c55e44; }
+    .held        { background:#d9770622; color:#f97316;  border:1px solid #f9731644; }
+    .cancelled   { background:#dc262622; color:#f87171;  border:1px solid #f8717144; }
+    .rescheduled { background:#7c3aed22; color:#a78bfa;  border:1px solid #a78bfa44; }
+    .booked      { background:#0369a122; color:#38bdf8;  border:1px solid #38bdf844; }
+    .log-entry { padding:9px 12px; border-bottom:1px solid #0f172a; font-size:12px; display:flex; gap:12px; }
     .log-entry:last-child { border-bottom:none; }
-    .log-time   { color:#6366f1; min-width:90px; font-weight:600; }
-    .log-msg    { color:#cbd5e1; }
-    .log-box    { max-height:300px; overflow-y:auto; }
-
+    .log-time { color:#6366f1; min-width:90px; font-weight:600; }
+    .log-msg  { color:#cbd5e1; }
+    .log-box  { max-height:300px; overflow-y:auto; }
     .empty { color:#475569; font-size:13px; padding:15px 0; text-align:center; }
     .counter { font-size:11px; color:#475569; margin-right:auto; }
   </style>
 </head>
 <body>
-
 <header>
   <div class="live-dot"></div>
   <div>
@@ -178,18 +180,13 @@ DASHBOARD_HTML = """
 </div>
 
 <div class="grid">
-
   <div class="card full">
     <h2>📅 المواعيد</h2>
     <table>
-      <thead><tr>
-        <th>رقم الموعد</th><th>المريض</th><th>الطبيب</th>
-        <th>التاريخ</th><th>الوقت</th><th>الحالة</th>
-      </tr></thead>
+      <thead><tr><th>رقم الموعد</th><th>المريض</th><th>الطبيب</th><th>التاريخ</th><th>الوقت</th><th>الحالة</th></tr></thead>
       <tbody id="appt-body"><tr><td colspan="6" class="empty">جاري التحميل...</td></tr></tbody>
     </table>
   </div>
-
   <div class="card">
     <h2>👤 المرضى المسجلون</h2>
     <table>
@@ -197,14 +194,10 @@ DASHBOARD_HTML = """
       <tbody id="pat-body"><tr><td colspan="3" class="empty">جاري التحميل...</td></tr></tbody>
     </table>
   </div>
-
   <div class="card">
     <h2>⚡ سجل النشاط المباشر</h2>
-    <div class="log-box" id="log-body">
-      <div class="empty">لا يوجد نشاط بعد</div>
-    </div>
+    <div class="log-box" id="log-body"><div class="empty">لا يوجد نشاط بعد</div></div>
   </div>
-
   <div class="card full">
     <h2>📝 ملاحظات المكالمات</h2>
     <table>
@@ -212,7 +205,6 @@ DASHBOARD_HTML = """
       <tbody id="notes-body"><tr><td colspan="3" class="empty">لا توجد ملاحظات بعد</td></tr></tbody>
     </table>
   </div>
-
 </div>
 
 <script>
@@ -224,70 +216,34 @@ async function load() {
       fetch('/api/log').then(r => r.json()),
       fetch('/api/notes').then(r => r.json())
     ])
-
-    // Stats
     document.getElementById('stats').innerHTML =
       stat(pats.length, 'إجمالي المرضى') +
       stat(appts.filter(a => a.status === 'confirmed').length, 'مواعيد مؤكدة') +
       stat(appts.filter(a => a.status === 'cancelled').length, 'مواعيد ملغاة') +
       stat(appts.filter(a => a.status === 'held').length, 'محجوزة مؤقتاً')
-
-    // Appointments
     document.getElementById('appt-body').innerHTML = appts.length
-      ? appts.map(a => `<tr>
-          <td><strong>#${a.id}</strong></td>
-          <td>${a.patient_name || '—'}</td>
-          <td>${a.doctor_name || '—'}</td>
-          <td>${a.date || '—'}</td>
-          <td>${a.fromtime || '—'} → ${a.endtime || '—'}</td>
-          <td><span class="badge ${a.status}">${a.status}</span></td>
-        </tr>`).join('')
+      ? appts.map(a => `<tr><td><strong>#${a.id}</strong></td><td>${a.patient_name||'—'}</td><td>${a.doctor_name||'—'}</td><td>${a.date||'—'}</td><td>${a.fromtime||'—'} → ${a.endtime||'—'}</td><td><span class="badge ${a.status}">${a.status}</span></td></tr>`).join('')
       : '<tr><td colspan="6" class="empty">لا توجد مواعيد بعد</td></tr>'
-
-    // Patients
     document.getElementById('pat-body').innerHTML = pats.length
-      ? pats.map(p => `<tr>
-          <td>#${p.id}</td>
-          <td>${p.arabicname || p.englishname || '—'}</td>
-          <td>${p.mobile || '—'}</td>
-        </tr>`).join('')
+      ? pats.map(p => `<tr><td>#${p.id}</td><td>${p.arabicname||p.englishname||'—'}</td><td>${p.mobile||'—'}</td></tr>`).join('')
       : '<tr><td colspan="3" class="empty">لا يوجد مرضى بعد</td></tr>'
-
-    // Activity Log
     document.getElementById('log-body').innerHTML = logs.length
-      ? logs.map(l => `<div class="log-entry">
-          <span class="log-time">${l.time}</span>
-          <span class="log-msg">${l.message}</span>
-        </div>`).join('')
+      ? logs.map(l => `<div class="log-entry"><span class="log-time">${l.time}</span><span class="log-msg">${l.message}</span></div>`).join('')
       : '<div class="empty">لا يوجد نشاط بعد</div>'
-
-    // Notes
     document.getElementById('notes-body').innerHTML = nts.length
-      ? nts.map(n => `<tr>
-          <td>${n.patient_name || '#' + n.patient_id}</td>
-          <td>${n.notes}</td>
-          <td>${n.time}</td>
-        </tr>`).join('')
+      ? nts.map(n => `<tr><td>${n.patient_name||'#'+n.patient_id}</td><td>${n.notes}</td><td>${n.time}</td></tr>`).join('')
       : '<tr><td colspan="3" class="empty">لا توجد ملاحظات بعد</td></tr>'
-
-    document.getElementById('last-update').textContent =
-      'آخر تحديث: ' + new Date().toLocaleTimeString('ar-SA')
-
-  } catch(e) {
-    console.error('Load error:', e)
-  }
+    document.getElementById('last-update').textContent = 'آخر تحديث: ' + new Date().toLocaleTimeString('ar-SA')
+  } catch(e) { console.error('Load error:', e) }
 }
-
 function stat(num, label) {
   return `<div class="stat"><div class="stat-num">${num}</div><div class="stat-label">${label}</div></div>`
 }
-
 async function resetData() {
   if (!confirm('هل أنت متأكد من مسح جميع البيانات؟')) return
   await fetch('/api/reset', { method: 'POST' })
   load()
 }
-
 load()
 setInterval(load, 5000)
 </script>
@@ -306,7 +262,7 @@ def dashboard():
 
 
 # ─────────────────────────────────────────────────────────────
-# INTERNAL DATA APIs (used by the dashboard)
+# INTERNAL DATA APIs (used by the dashboard only)
 # ─────────────────────────────────────────────────────────────
 
 @app.route('/api/appointments')
@@ -330,6 +286,7 @@ def api_reset():
     appointments.clear()
     notes.clear()
     activity_log.clear()
+    debug_log.clear()
     log('🔄 تم مسح جميع البيانات')
     return jsonify({"status": "reset"})
 
@@ -351,9 +308,7 @@ def search_patient():
 
 
 @app.route('/MyCallAi/patients/<int:pid>/insurance/eligibility')
-@app.route('/MyCallAi/insurance/eligibility')
-def get_eligibility(pid=None):
-    pid = pid or request.args.get('patient_id')
+def insurance_eligibility(pid):
     log(f"🏥 تم التحقق من أهلية التأمين للمريض #{pid}")
     return jsonify({"patient_id": pid, "eligible": True, "message": "التأمين ساري وفعّال"})
 
@@ -369,10 +324,10 @@ def add_note(pid):
     data = request.get_json() or {}
     patient = find_patient(pid)
     note = {
-        "patient_id": pid,
-        "patient_name": patient.get('arabicname') or patient.get('englishname') if patient else f"#{pid}",
-        "notes": data.get('notes', ''),
-        "time": datetime.now().strftime("%I:%M %p")
+        "patient_id":   pid,
+        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else f"#{pid}",
+        "notes":        data.get('notes', ''),
+        "time":         datetime.now().strftime("%I:%M %p")
     }
     notes.insert(0, note)
     log(f"📝 تم حفظ ملاحظة للمريض #{pid}")
@@ -411,7 +366,7 @@ def update_patient(pid):
 @app.route('/MyCallAi/patients', methods=['POST'])
 def create_patient():
     data = request.get_json() or {}
-# Normalize bithdate/birthdate — client uses "bithdate" (their typo, must match)
+    # Handle bithdate typo — client uses "bithdate" not "birthdate"
     if 'birthdate' in data:
         data['bithdate'] = data.pop('birthdate')
     new_patient = {"id": int(datetime.now().timestamp()), **data}
@@ -461,12 +416,11 @@ def get_schedule(did):
 
 @app.route('/MyCallAi/appointments/available', methods=['GET', 'POST'])
 def get_available():
-    # Accept parameters from query string OR body — both work
-    data         = request.get_json(silent=True) or {}
-    app_dt_fmt   = request.args.get('app_dt_fmt')   or data.get('app_dt_fmt')
-    doctorid     = request.args.get('doctorid')      or data.get('doctorid')
-    day_id       = request.args.get('day_id')        or data.get('day_id')
-
+    # Accepts parameters from query string OR body — both work
+    data       = request.get_json(silent=True) or {}
+    app_dt_fmt = request.args.get('app_dt_fmt') or data.get('app_dt_fmt')
+    doctorid   = request.args.get('doctorid')   or data.get('doctorid')
+    day_id     = request.args.get('day_id')     or data.get('day_id')
     log(f"🕐 تم جلب المواعيد المتاحة | التاريخ: {app_dt_fmt} | الطبيب: {doctorid} | اليوم: {day_id}")
     return jsonify([
         {"fromtime": "09:00 AM", "endtime": "09:30 AM"},
@@ -480,43 +434,53 @@ def get_available():
 
 @app.route('/MyCallAi/appointments/hold', methods=['POST'])
 def hold_appointment():
-    data = request.get_json() or {}
-    patient = find_patient(data.get('patientid', 0))
-    doctor  = find_doctor(data.get('doctorid', 0))
+    data     = request.get_json() or {}
+    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
+    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
+    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
+    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
+    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
+    patient  = find_patient(pid) if pid else None
+    doctor   = find_doctor(did)  if did  else None
     appt = {
-        "id": int(datetime.now().timestamp()),
-        "patient_id":   data.get('patientid'),
-        "patient_name": patient.get('arabicname') or patient.get('englishname') if patient else 'غير محدد',
-        "doctor_id":    data.get('doctorid'),
+        "id":           int(datetime.now().timestamp()),
+        "patient_id":   pid,
+        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else 'غير محدد',
+        "doctor_id":    did,
         "doctor_name":  doctor['name'] if doctor else 'غير محدد',
-        "date":         data.get('appointmentdate'),
-        "fromtime":     data.get('fromtime'),
-        "endtime":      data.get('endtime'),
+        "date":         date,
+        "fromtime":     fromtime,
+        "endtime":      endtime,
         "status":       "held"
     }
     appointments.append(appt)
-    log(f"⏳ تم حجز موعد مؤقت لـ {appt['patient_name']} مع {appt['doctor_name']}")
+    log(f"⏳ تم حجز موعد مؤقت لـ {appt['patient_name']} مع {appt['doctor_name']} | {date} | {fromtime}")
     return jsonify({"appointment_id": appt['id'], "status": "held", "message": "تم حجز الموعد مؤقتاً"})
 
 
 @app.route('/MyCallAi/appointments', methods=['POST'])
 def create_appointment():
-    data = request.get_json() or {}
-    patient = find_patient(data.get('patientid', 0))
-    doctor  = find_doctor(data.get('doctorid', 0))
+    data     = request.get_json() or {}
+    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
+    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
+    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
+    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
+    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
+    patient  = find_patient(pid) if pid else None
+    doctor   = find_doctor(did)  if did  else None
     appt = {
-        "id": int(datetime.now().timestamp()),
-        "patient_id":   data.get('patientid'),
-        "patient_name": patient.get('arabicname') or patient.get('englishname') if patient else 'غير محدد',
-        "doctor_id":    data.get('doctorid'),
+        "id":           int(datetime.now().timestamp()),
+        "patient_id":   pid,
+        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else 'غير محدد',
+        "doctor_id":    did,
         "doctor_name":  doctor['name'] if doctor else 'غير محدد',
-        "date":         data.get('appointmentdate'),
-        "fromtime":     data.get('fromtime'),
-        "endtime":      data.get('endtime'),
+        "date":         date,
+        "fromtime":     fromtime,
+        "endtime":      endtime,
         "status":       "booked"
     }
     appointments.append(appt)
-    log(f"📌 تم حجز موعد لـ {appt['patient_name']} مع {appt['doctor_name']}")
+    log(f"📌 تم حجز موعد لـ {appt['patient_name']} مع {appt['doctor_name']} | {date} | {fromtime}")
     return jsonify(appt), 201
 
 
@@ -537,17 +501,6 @@ def confirm_appointment(aid):
     log(f"✅ تم تأكيد الموعد لـ {name}")
     return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
 
-@app.route('/MyCallAi/appointments/confirm', methods=['POST'])
-def confirm_appointment_by_body():
-    global appointments
-    data = request.get_json() or {}
-    aid = data.get('hold_id') or data.get('appointment_id')
-    appt = next((a for a in appointments if str(a['id']) == str(aid)), None)
-    appointments = [dict(a, status='confirmed') if str(a['id']) == str(aid) else a for a in appointments]
-    name = appt['patient_name'] if appt else f"#{aid}"
-    log(f"✅ تم تأكيد الموعد لـ {name}")
-    return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
-
 
 @app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST', 'PUT'])
 def cancel_appointment(aid):
@@ -562,11 +515,21 @@ def cancel_appointment(aid):
 @app.route('/MyCallAi/appointments/<int:aid>/reschedule', methods=['POST', 'PUT'])
 def reschedule_appointment(aid):
     global appointments
-    data = request.get_json() or {}
-    appt = next((a for a in appointments if a['id'] == aid), None)
-    appointments = [dict(a, **data, status='rescheduled') if a['id'] == aid else a for a in appointments]
+    data     = request.get_json() or {}
+    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
+    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
+    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
+    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
+    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
+    appt     = next((a for a in appointments if a['id'] == aid), None)
+    for a in appointments:
+        if a['id'] == aid:
+            if date:     a['date']     = date
+            if fromtime: a['fromtime'] = fromtime
+            if endtime:  a['endtime']  = endtime
+            a['status'] = 'rescheduled'
     name = appt['patient_name'] if appt else f"#{aid}"
-    log(f"🔄 تم تعديل الموعد لـ {name}")
+    log(f"🔄 تم تعديل الموعد لـ {name} | {date} | {fromtime}")
     return jsonify({"appointment_id": aid, "status": "rescheduled", "message": "تم تعديل الموعد بنجاح"})
 
 
