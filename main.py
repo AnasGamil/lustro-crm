@@ -411,6 +411,9 @@ def update_patient(pid):
 @app.route('/MyCallAi/patients', methods=['POST'])
 def create_patient():
     data = request.get_json() or {}
+# Normalize bithdate/birthdate — client uses "bithdate" (their typo, must match)
+    if 'birthdate' in data:
+        data['bithdate'] = data.pop('birthdate')
     new_patient = {"id": int(datetime.now().timestamp()), **data}
     patients.append(new_patient)
     name = new_patient.get('arabicname') or new_patient.get('englishname') or 'غير محدد'
@@ -456,9 +459,15 @@ def get_schedule(did):
 # APPOINTMENT ENDPOINTS
 # ─────────────────────────────────────────────────────────────
 
-@app.route('/MyCallAi/appointments/available')
+@app.route('/MyCallAi/appointments/available', methods=['GET', 'POST'])
 def get_available():
-    log("🕐 تم جلب المواعيد المتاحة")
+    # Accept parameters from query string OR body — both work
+    data         = request.get_json(silent=True) or {}
+    app_dt_fmt   = request.args.get('app_dt_fmt')   or data.get('app_dt_fmt')
+    doctorid     = request.args.get('doctorid')      or data.get('doctorid')
+    day_id       = request.args.get('day_id')        or data.get('day_id')
+
+    log(f"🕐 تم جلب المواعيد المتاحة | التاريخ: {app_dt_fmt} | الطبيب: {doctorid} | اليوم: {day_id}")
     return jsonify([
         {"fromtime": "09:00 AM", "endtime": "09:30 AM"},
         {"fromtime": "10:00 AM", "endtime": "10:30 AM"},
