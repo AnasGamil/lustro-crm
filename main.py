@@ -1,49 +1,114 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, make_response
 from flask_cors import CORS
 from datetime import datetime
 import os
+import json
 
 app = Flask(__name__)
 CORS(app)
 
 # ─────────────────────────────────────────────────────────────
 # IN-MEMORY DATABASE
+# Matches REAL Dentak CRM field names exactly (PascalCase)
 # ─────────────────────────────────────────────────────────────
 
 patients = [
-    {"id": 11763, "arabicname": "أحمد محمد", "englishname": "Ahmed Mohamed", "mobile": "0538892874"}
+    {
+        "FileNo": "7855",
+        "ArabicName": "الهام عيشه التبيتي",
+        "EnglishName": "الهام عيشه التبيتي",
+        "Mobile": "0503519928",
+        "IDCard": "1030514028"
+    },
+    {
+        "FileNo": "12316",
+        "ArabicName": "انس جميل محمد احمد",
+        "EnglishName": "AnasGamin mohamed احمد",
+        "Mobile": "0512345678",
+        "IDCard": "2134567892"
+    }
 ]
 
+next_patient_id = 30000
+next_appointment_id = 50000
+
 appointments = [
-    {"id": 46577, "patient_id": 11763, "patient_name": "أحمد محمد", "doctor_id": 113,
-     "doctor_name": "د. فهد الطاسان", "date": "2026/03/10",
-     "fromtime": "10:00 AM", "endtime": "10:30 AM", "status": "confirmed"}
+    {
+        "AppointmentId": 48504,
+        "PatientId": "12316",
+        "PatientName": "انس جميل محمد احمد",
+        "PatientMobile": "0512345678",
+        "DoctorId": 113,
+        "DoctorName": "د. أنوار حكمي",
+        "AppointmentDate": "2026/03/06",
+        "StartTime": "05:30 pm",
+        "EndTime": "06:30 pm",
+        "Status": "Waiting"
+    }
 ]
 
 notes = []
 activity_log = []
-debug_log = []
 
 specialties = [
-    {"id": 1, "name": "تقويم الأسنان"},
-    {"id": 2, "name": "زراعة الأسنان"},
-    {"id": 3, "name": "طب أسنان الأطفال"},
-    {"id": 4, "name": "علاج عصب الأسنان"},
-    {"id": 5, "name": "تجميل الأسنان"}
+    {"Id": 1,  "NameArabic": "الطب النفسي",                    "NameEnglish": "Psychiatry"},
+    {"Id": 2,  "NameArabic": "انف أذن وحنجرة",                 "NameEnglish": "Ear, Nose and Throat"},
+    {"Id": 3,  "NameArabic": "أمراض القلب والأوعية الدموية",    "NameEnglish": "Cardiology and Vascular Disease"},
+    {"Id": 4,  "NameArabic": "السمعيات",                        "NameEnglish": "Audiology"},
+    {"Id": 5,  "NameArabic": "العلاج الطبيعي",                  "NameEnglish": "Physiotherapy"},
+    {"Id": 6,  "NameArabic": "الطب الباطني",                    "NameEnglish": "Internal Medicine"},
+    {"Id": 7,  "NameArabic": "طب الأطفال",                      "NameEnglish": "Pediatrics"},
+    {"Id": 8,  "NameArabic": "النساء والولادة",                  "NameEnglish": "Obstetrics and Gynecology"},
+    {"Id": 9,  "NameArabic": "الجلدية",                         "NameEnglish": "Dermatology"},
+    {"Id": 10, "NameArabic": "الأسنان والتقويم",                "NameEnglish": "Dental and Orthodontics"},
+    {"Id": 11, "NameArabic": "جراحة العظام",                    "NameEnglish": "Orthopedic Surgery"},
+    {"Id": 12, "NameArabic": "المسالك البولية",                 "NameEnglish": "Urology"},
+    {"Id": 13, "NameArabic": "العيون",                          "NameEnglish": "Ophthalmology"},
+    {"Id": 14, "NameArabic": "الجراحة العامة",                  "NameEnglish": "General Surgery"},
+    {"Id": 15, "NameArabic": "التغذية",                         "NameEnglish": "Nutrition"}
 ]
 
 doctors = [
-    {"id": 113, "name": "د. فهد الطاسان",      "specialty_id": 5},
-    {"id": 114, "name": "د. أنس جان",           "specialty_id": 2},
-    {"id": 115, "name": "د. ماهر كشكول",        "specialty_id": 1},
-    {"id": 116, "name": "د. عبدالعزيز البارقي", "specialty_id": 3},
-    {"id": 117, "name": "د. نايف المطيري",      "specialty_id": 4}
+    {"Id": 5,   "Code": "1",  "ArabicName": "د. عبدالرحمن قنوت",  "EnglishName": "Dr. Abdulrahman Kannout", "SpecialtyId": 10, "SpecialtyName": "الأسنان والتقويم"},
+    {"Id": 6,   "Code": "2",  "ArabicName": "د. نعمت العاقل",     "EnglishName": "Dr. Nimat",               "SpecialtyId": 10, "SpecialtyName": "الأسنان والتقويم"},
+    {"Id": 7,   "Code": "3",  "ArabicName": "د. هنادي الحارثي",   "EnglishName": "Dr. Hanadi Alharthi",     "SpecialtyId": 10, "SpecialtyName": "الأسنان والتقويم"},
+    {"Id": 108, "Code": "15", "ArabicName": "د. فهد الطاسان",     "EnglishName": "Dr. Fahad Altasan",       "SpecialtyId": 10, "SpecialtyName": "الأسنان والتقويم"},
+    {"Id": 113, "Code": "20", "ArabicName": "د. أنوار حكمي",      "EnglishName": "Dr. Anwar Hakmi",         "SpecialtyId": 10, "SpecialtyName": "الأسنان والتقويم"},
+    {"Id": 50,  "Code": "8",  "ArabicName": "د. سارة المالكي",    "EnglishName": "Dr. Sarah Almalki",       "SpecialtyId": 7,  "SpecialtyName": "طب الأطفال"},
+    {"Id": 60,  "Code": "10", "ArabicName": "د. محمد العتيبي",    "EnglishName": "Dr. Mohammed Alotaibi",   "SpecialtyId": 6,  "SpecialtyName": "الطب الباطني"},
+    {"Id": 70,  "Code": "12", "ArabicName": "د. نورة الشهري",     "EnglishName": "Dr. Noura Alshahri",      "SpecialtyId": 9,  "SpecialtyName": "الجلدية"},
 ]
 
+# Doctor schedules (keyed by doctor Id)
+schedules = {
+    5: [
+        {"DoctorId": 5, "DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "10:00 am", "EndTime": "10:00 am", "SlotMinutes": 15},
+        {"DoctorId": 5, "DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "06:00 pm", "EndTime": "06:00 pm", "SlotMinutes": 15},
+        {"DoctorId": 5, "DayOfWeek": 3, "DayName": "Monday",    "StartTime": "10:00 am", "EndTime": "10:00 am", "SlotMinutes": 15},
+        {"DoctorId": 5, "DayOfWeek": 3, "DayName": "Monday",    "StartTime": "06:00 pm", "EndTime": "06:00 pm", "SlotMinutes": 15},
+    ],
+    108: [
+        {"DoctorId": 108, "DayOfWeek": 5, "DayName": "Wednesday", "StartTime": "02:00 pm", "EndTime": "02:00 pm", "SlotMinutes": 15},
+        {"DoctorId": 108, "DayOfWeek": 5, "DayName": "Wednesday", "StartTime": "09:00 pm", "EndTime": "09:00 pm", "SlotMinutes": 15},
+    ],
+    113: [
+        {"DoctorId": 113, "DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "09:00 am", "EndTime": "09:00 am", "SlotMinutes": 15},
+        {"DoctorId": 113, "DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "05:00 pm", "EndTime": "05:00 pm", "SlotMinutes": 15},
+        {"DoctorId": 113, "DayOfWeek": 3, "DayName": "Monday",    "StartTime": "09:00 am", "EndTime": "09:00 am", "SlotMinutes": 15},
+        {"DoctorId": 113, "DayOfWeek": 4, "DayName": "Tuesday",   "StartTime": "09:00 am", "EndTime": "09:00 am", "SlotMinutes": 15},
+    ],
+}
 
-# ─────────────────────────────────────────────────────────────
-# HELPER FUNCTIONS
-# ─────────────────────────────────────────────────────────────
+# Default schedule for doctors without specific schedule
+default_schedule = [
+    {"DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "09:00 am", "EndTime": "09:00 am", "SlotMinutes": 15},
+    {"DayOfWeek": 2, "DayName": "Sunday",    "StartTime": "05:00 pm", "EndTime": "05:00 pm", "SlotMinutes": 15},
+    {"DayOfWeek": 3, "DayName": "Monday",    "StartTime": "09:00 am", "EndTime": "09:00 am", "SlotMinutes": 15},
+    {"DayOfWeek": 3, "DayName": "Monday",    "StartTime": "05:00 pm", "EndTime": "05:00 pm", "SlotMinutes": 15},
+    {"DayOfWeek": 4, "DayName": "Tuesday",   "StartTime": "10:00 am", "EndTime": "10:00 am", "SlotMinutes": 15},
+    {"DayOfWeek": 4, "DayName": "Tuesday",   "StartTime": "04:00 pm", "EndTime": "04:00 pm", "SlotMinutes": 15},
+]
+
 
 def log(message):
     entry = {"time": datetime.now().strftime("%I:%M:%S %p"), "message": message}
@@ -52,54 +117,46 @@ def log(message):
         activity_log.pop()
 
 
-def find_patient(pid):
-    try:
-        return next((p for p in patients if p["id"] == int(pid)), None)
-    except (ValueError, TypeError):
-        return None
+def find_patient(file_no):
+    """Find patient by FileNo."""
+    return next((p for p in patients if str(p["FileNo"]) == str(file_no)), None)
+
+
+def find_patient_by_mobile(mobile):
+    """Find patient by mobile number."""
+    return next((p for p in patients if p["Mobile"] == mobile), None)
 
 
 def find_doctor(did):
-    try:
-        return next((d for d in doctors if d["id"] == int(did)), None)
-    except (ValueError, TypeError):
-        return None
+    """Find doctor by Id."""
+    return next((d for d in doctors if d["Id"] == int(did)), None)
 
 
-def get_val(data, *keys):
-    """
-    Try multiple possible key names and return the first match.
-    Solves parameter naming mismatch between ElevenLabs and the CRM.
-    """
-    for key in keys:
-        if key in data and data[key] not in (None, '', 0):
-            return data[key]
-    return None
+def find_appointment(aid):
+    """Find appointment by AppointmentId."""
+    return next((a for a in appointments if a["AppointmentId"] == int(aid)), None)
 
 
-# ─────────────────────────────────────────────────────────────
-# DEBUG — captures every request the agent makes
-# Open /api/debug in browser to see exactly what was sent
-# ─────────────────────────────────────────────────────────────
-
-@app.before_request
-def capture_request():
-    if request.path.startswith('/MyCallAi'):
-        entry = {
-            "time":   datetime.now().strftime("%I:%M:%S %p"),
-            "method": request.method,
-            "path":   request.path,
-            "params": dict(request.args),
-            "body":   request.get_json(silent=True) or {}
-        }
-        debug_log.insert(0, entry)
-        if len(debug_log) > 20:
-            debug_log.pop()
-
-
-@app.route('/api/debug')
-def api_debug():
-    return jsonify(debug_log)
+def generate_slots(doctor_id, slot_date):
+    """Generate realistic available time slots for a doctor on a given date."""
+    did = str(doctor_id)
+    slots = []
+    base_times = [
+        ("09:00 am", "09:15 am"), ("09:15 am", "09:30 am"), ("09:30 am", "09:45 am"),
+        ("10:00 am", "10:15 am"), ("10:15 am", "10:30 am"), ("10:30 am", "10:45 am"),
+        ("11:00 am", "11:15 am"), ("11:30 am", "11:45 am"),
+        ("02:00 pm", "02:15 pm"), ("02:15 pm", "02:30 pm"), ("02:30 pm", "02:45 pm"),
+        ("03:00 pm", "03:15 pm"), ("03:30 pm", "03:45 pm"),
+        ("05:00 pm", "05:15 pm"), ("05:15 pm", "05:30 pm"), ("05:30 pm", "05:45 pm"),
+    ]
+    for start, end in base_times:
+        slots.append({
+            "DocotorID": did,  # NOTE: Real API has this typo — must match exactly
+            "SlotDate": slot_date,
+            "StartTime": start,
+            "EndTime": end
+        })
+    return slots
 
 
 # ─────────────────────────────────────────────────────────────
@@ -112,11 +169,15 @@ DASHBOARD_HTML = """
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lustro CRM</title>
+  <title>Lustro CRM — Mock</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Segoe UI',Tahoma,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; }
-    header { background:linear-gradient(135deg,#1e293b,#0f172a); padding:18px 30px; border-bottom:2px solid #6366f1; display:flex; align-items:center; gap:14px; }
+    header {
+      background:linear-gradient(135deg,#1e293b,#0f172a);
+      padding:18px 30px; border-bottom:2px solid #6366f1;
+      display:flex; align-items:center; gap:14px;
+    }
     header h1 { font-size:20px; color:#a5b4fc; }
     header p  { font-size:12px; color:#64748b; margin-top:2px; }
     .live-dot { width:10px; height:10px; background:#22c55e; border-radius:50%; animation:pulse 1.5s infinite; }
@@ -142,18 +203,19 @@ DASHBOARD_HTML = """
     tr:last-child td { border-bottom:none; }
     tr:hover td { background:#1e3a5f18; }
     .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; display:inline-block; }
-    .confirmed   { background:#16a34a22; color:#22c55e;  border:1px solid #22c55e44; }
-    .held        { background:#d9770622; color:#f97316;  border:1px solid #f9731644; }
-    .cancelled   { background:#dc262622; color:#f87171;  border:1px solid #f8717144; }
-    .rescheduled { background:#7c3aed22; color:#a78bfa;  border:1px solid #a78bfa44; }
-    .booked      { background:#0369a122; color:#38bdf8;  border:1px solid #38bdf844; }
+    .Confirmed  { background:#16a34a22; color:#22c55e; border:1px solid #22c55e44; }
+    .Waiting    { background:#d9770622; color:#f97316; border:1px solid #f9731644; }
+    .Canceled   { background:#dc262622; color:#f87171; border:1px solid #f8717144; }
+    .Rescheduled{ background:#7c3aed22; color:#a78bfa; border:1px solid #a78bfa44; }
+    .held       { background:#0369a122; color:#38bdf8; border:1px solid #38bdf844; }
     .log-entry { padding:9px 12px; border-bottom:1px solid #0f172a; font-size:12px; display:flex; gap:12px; }
     .log-entry:last-child { border-bottom:none; }
     .log-time { color:#6366f1; min-width:90px; font-weight:600; }
-    .log-msg  { color:#cbd5e1; }
-    .log-box  { max-height:300px; overflow-y:auto; }
+    .log-msg { color:#cbd5e1; }
+    .log-box { max-height:300px; overflow-y:auto; }
     .empty { color:#475569; font-size:13px; padding:15px 0; text-align:center; }
     .counter { font-size:11px; color:#475569; margin-right:auto; }
+    .mock-tag { background:#f59e0b22; color:#f59e0b; border:1px solid #f59e0b44; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; margin-right:10px; }
   </style>
 </head>
 <body>
@@ -163,15 +225,11 @@ DASHBOARD_HTML = """
     <h1>🦷 Lustro CRM — لوحة التحكم</h1>
     <p>عيادات لوسترو — حي المروة، جدة | تتحدث تلقائياً كل 5 ثوانٍ</p>
   </div>
+  <span class="mock-tag">⚠️ MOCK — يطابق CRM الحقيقي</span>
   <span class="badge-live" style="margin-right:auto">● LIVE</span>
 </header>
 
-<div class="stats" id="stats">
-  <div class="stat"><div class="stat-num">—</div><div class="stat-label">إجمالي المرضى</div></div>
-  <div class="stat"><div class="stat-num">—</div><div class="stat-label">مواعيد مؤكدة</div></div>
-  <div class="stat"><div class="stat-num">—</div><div class="stat-label">مواعيد ملغاة</div></div>
-  <div class="stat"><div class="stat-num">—</div><div class="stat-label">محجوزة مؤقتاً</div></div>
-</div>
+<div class="stats" id="stats"></div>
 
 <div class="toolbar">
   <button class="btn" onclick="load()">🔄 تحديث الآن</button>
@@ -190,7 +248,7 @@ DASHBOARD_HTML = """
   <div class="card">
     <h2>👤 المرضى المسجلون</h2>
     <table>
-      <thead><tr><th>رقم</th><th>الاسم</th><th>الجوال</th></tr></thead>
+      <thead><tr><th>رقم الملف</th><th>الاسم</th><th>الجوال</th></tr></thead>
       <tbody id="pat-body"><tr><td colspan="3" class="empty">جاري التحميل...</td></tr></tbody>
     </table>
   </div>
@@ -218,26 +276,37 @@ async function load() {
     ])
     document.getElementById('stats').innerHTML =
       stat(pats.length, 'إجمالي المرضى') +
-      stat(appts.filter(a => a.status === 'confirmed').length, 'مواعيد مؤكدة') +
-      stat(appts.filter(a => a.status === 'cancelled').length, 'مواعيد ملغاة') +
-      stat(appts.filter(a => a.status === 'held').length, 'محجوزة مؤقتاً')
+      stat(appts.filter(a => a.Status === 'Confirmed').length, 'مواعيد مؤكدة') +
+      stat(appts.filter(a => a.Status === 'Canceled').length, 'مواعيد ملغاة') +
+      stat(appts.filter(a => a.Status === 'Waiting').length, 'بانتظار التأكيد')
     document.getElementById('appt-body').innerHTML = appts.length
-      ? appts.map(a => `<tr><td><strong>#${a.id}</strong></td><td>${a.patient_name||'—'}</td><td>${a.doctor_name||'—'}</td><td>${a.date||'—'}</td><td>${a.fromtime||'—'} → ${a.endtime||'—'}</td><td><span class="badge ${a.status}">${a.status}</span></td></tr>`).join('')
+      ? appts.map(a => '<tr>' +
+          '<td><strong>#' + a.AppointmentId + '</strong></td>' +
+          '<td>' + (a.PatientName || '—') + '</td>' +
+          '<td>' + (a.DoctorName || '—') + '</td>' +
+          '<td>' + (a.AppointmentDate || '—') + '</td>' +
+          '<td>' + (a.StartTime || '—') + ' → ' + (a.EndTime || '—') + '</td>' +
+          '<td><span class="badge ' + a.Status + '">' + a.Status + '</span></td>' +
+        '</tr>').join('')
       : '<tr><td colspan="6" class="empty">لا توجد مواعيد بعد</td></tr>'
     document.getElementById('pat-body').innerHTML = pats.length
-      ? pats.map(p => `<tr><td>#${p.id}</td><td>${p.arabicname||p.englishname||'—'}</td><td>${p.mobile||'—'}</td></tr>`).join('')
+      ? pats.map(p => '<tr>' +
+          '<td>#' + p.FileNo + '</td>' +
+          '<td>' + (p.ArabicName || p.EnglishName || '—') + '</td>' +
+          '<td>' + (p.Mobile || '—') + '</td>' +
+        '</tr>').join('')
       : '<tr><td colspan="3" class="empty">لا يوجد مرضى بعد</td></tr>'
     document.getElementById('log-body').innerHTML = logs.length
-      ? logs.map(l => `<div class="log-entry"><span class="log-time">${l.time}</span><span class="log-msg">${l.message}</span></div>`).join('')
+      ? logs.map(l => '<div class="log-entry"><span class="log-time">' + l.time + '</span><span class="log-msg">' + l.message + '</span></div>').join('')
       : '<div class="empty">لا يوجد نشاط بعد</div>'
     document.getElementById('notes-body').innerHTML = nts.length
-      ? nts.map(n => `<tr><td>${n.patient_name||'#'+n.patient_id}</td><td>${n.notes}</td><td>${n.time}</td></tr>`).join('')
+      ? nts.map(n => '<tr><td>' + (n.patient_name || '#' + n.patient_id) + '</td><td>' + n.notes + '</td><td>' + n.time + '</td></tr>').join('')
       : '<tr><td colspan="3" class="empty">لا توجد ملاحظات بعد</td></tr>'
     document.getElementById('last-update').textContent = 'آخر تحديث: ' + new Date().toLocaleTimeString('ar-SA')
   } catch(e) { console.error('Load error:', e) }
 }
 function stat(num, label) {
-  return `<div class="stat"><div class="stat-num">${num}</div><div class="stat-label">${label}</div></div>`
+  return '<div class="stat"><div class="stat-num">' + num + '</div><div class="stat-label">' + label + '</div></div>'
 }
 async function resetData() {
   if (!confirm('هل أنت متأكد من مسح جميع البيانات؟')) return
@@ -286,274 +355,348 @@ def api_reset():
     appointments.clear()
     notes.clear()
     activity_log.clear()
-    debug_log.clear()
     log('🔄 تم مسح جميع البيانات')
     return jsonify({"status": "reset"})
 
+@app.route('/api/debug')
+def api_debug():
+    return jsonify(activity_log[:20])
 
-# ─────────────────────────────────────────────────────────────
-# PATIENT ENDPOINTS
-# ─────────────────────────────────────────────────────────────
 
+# ═════════════════════════════════════════════════════════════
+# DENTAK CRM API ENDPOINTS
+# Responses match the REAL Dentak CRM exactly
+# ═════════════════════════════════════════════════════════════
+
+
+# ── 1. FIND PATIENT BY PHONE ─────────────────────────────────
+# Real response: ARRAY of patient objects with PascalCase fields
 @app.route('/MyCallAi/patients/search')
 def search_patient():
     phone = request.args.get('phone', '')
-    patient = next((p for p in patients if p['mobile'] == phone), None)
+    patient = find_patient_by_mobile(phone)
     if patient:
-        log(f"🔍 تم إيجاد المريض: {patient.get('arabicname') or patient.get('englishname')} ({phone})")
-        return jsonify(patient)
+        log(f"🔍 تم إيجاد المريض: {patient['ArabicName']} ({phone})")
+        return jsonify([patient])  # Real API returns ARRAY
     else:
         log(f"🔍 لم يتم إيجاد المريض بالرقم: {phone}")
-        return jsonify({"message": "Patient not found"}), 404
+        return jsonify([])  # Empty array when not found
 
 
-@app.route('/MyCallAi/patients/<int:pid>/insurance/eligibility')
-def insurance_eligibility(pid):
-    log(f"🏥 تم التحقق من أهلية التأمين للمريض #{pid}")
-    return jsonify({"patient_id": pid, "eligible": True, "message": "التأمين ساري وفعّال"})
-
-
-@app.route('/MyCallAi/patients/<int:pid>/insurance')
-def patient_insurance(pid):
-    log(f"🏥 تم جلب بيانات التأمين للمريض #{pid}")
-    return jsonify({"patient_id": pid, "provider": "Allianz", "policy_number": "ALZ-2024-9987", "status": "active"})
-
-
-@app.route('/MyCallAi/patients/<int:pid>/notes', methods=['POST'])
-def add_note(pid):
-    data = request.get_json() or {}
-    patient = find_patient(pid)
-    note = {
-        "patient_id":   pid,
-        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else f"#{pid}",
-        "notes":        data.get('notes', ''),
-        "time":         datetime.now().strftime("%I:%M %p")
-    }
-    notes.insert(0, note)
-    log(f"📝 تم حفظ ملاحظة للمريض #{pid}")
-    return jsonify({"status": "saved", "message": "تم حفظ الملاحظة بنجاح"})
-
-
-@app.route('/MyCallAi/patients/<int:pid>/consent', methods=['GET'])
-def get_consent(pid):
-    log(f"✅ تم التحقق من موافقة المريض #{pid}")
-    return jsonify({"patient_id": pid, "whatsapp_consent": True})
-
-
-@app.route('/MyCallAi/patients/<int:pid>/consent', methods=['POST', 'PUT'])
-def save_consent(pid):
-    log(f"✅ تم حفظ موافقة المريض #{pid}")
-    return jsonify({"status": "saved"})
-
-
-@app.route('/MyCallAi/patients/<int:pid>', methods=['GET'])
+# ── 2. GET PATIENT DETAILS ───────────────────────────────────
+# Real response: single object with PascalCase fields
+@app.route('/MyCallAi/patients/<pid>', methods=['GET'])
 def get_patient(pid):
     patient = find_patient(pid)
     if patient:
+        log(f"👤 تم جلب بيانات المريض #{pid}")
         return jsonify(patient)
     return jsonify({"message": "Not found"}), 404
 
 
-@app.route('/MyCallAi/patients/<int:pid>', methods=['POST', 'PUT'])
-def update_patient(pid):
-    global patients
-    data = request.get_json() or {}
-    patients = [dict(p, **data) if p['id'] == pid else p for p in patients]
-    log(f"✏️ تم تحديث بيانات المريض #{pid}")
-    return jsonify({"status": "updated"})
-
-
+# ── 3. CREATE NEW PATIENT ────────────────────────────────────
+# Real request body: lowercase (arabicname, englishname, mobile, idcard, bithdate)
+# Real response: {"Status": "SUCCESS", "id": "12316"}
 @app.route('/MyCallAi/patients', methods=['POST'])
 def create_patient():
+    global next_patient_id
     data = request.get_json() or {}
-    # Handle bithdate typo — client uses "bithdate" not "birthdate"
-    if 'birthdate' in data:
-        data['bithdate'] = data.pop('birthdate')
-    new_patient = {"id": int(datetime.now().timestamp()), **data}
+    new_id = str(next_patient_id)
+    next_patient_id += 1
+
+    new_patient = {
+        "FileNo": new_id,
+        "ArabicName": data.get('arabicname', ''),
+        "EnglishName": data.get('englishname', ''),
+        "Mobile": data.get('mobile', ''),
+        "IDCard": data.get('idcard', ''),
+    }
     patients.append(new_patient)
-    name = new_patient.get('arabicname') or new_patient.get('englishname') or 'غير محدد'
-    log(f"✅ تم تسجيل مريض جديد: {name}")
-    return jsonify(new_patient), 201
+    name = new_patient['ArabicName'] or new_patient['EnglishName'] or 'غير محدد'
+    log(f"✅ تم تسجيل مريض جديد: {name} (ملف #{new_id})")
+    return jsonify({"Status": "SUCCESS", "id": new_id})
 
 
-# ─────────────────────────────────────────────────────────────
-# SPECIALTIES & DOCTORS
-# ─────────────────────────────────────────────────────────────
-
-@app.route('/MyCallAi/specialties')
-def get_specialties():
-    log("📋 تم جلب قائمة التخصصات")
-    return jsonify(specialties)
-
-
-@app.route('/MyCallAi/doctors')
-def get_doctors():
-    specialty_id = request.args.get('specialty_id')
-    result = [d for d in doctors if str(d['specialty_id']) == str(specialty_id)] if specialty_id else doctors
-    log("👨‍⚕️ تم جلب قائمة الأطباء")
-    return jsonify(result)
+# ── 4. UPDATE PATIENT BASIC DATA ─────────────────────────────
+# Real response: "SUCCESS" (plain string)
+@app.route('/MyCallAi/patients/<pid>', methods=['POST'])
+def update_patient(pid):
+    data = request.get_json() or {}
+    patient = find_patient(pid)
+    if patient:
+        if 'arabicname' in data:  patient['ArabicName'] = data['arabicname']
+        if 'englishname' in data: patient['EnglishName'] = data['englishname']
+        if 'mobile' in data:      patient['Mobile'] = data['mobile']
+        if 'idcard' in data:      patient['IDCard'] = data['idcard']
+        log(f"✏️ تم تحديث بيانات المريض #{pid}")
+    return make_response(json.dumps("SUCCESS"), 200, {'Content-Type': 'application/json'})
 
 
-@app.route('/MyCallAi/doctors/<int:did>/schedule')
-def get_schedule(did):
-    doctor = find_doctor(did)
-    log(f"🗓️ تم جلب جدول الطبيب: {doctor['name'] if doctor else f'#{did}'}")
+# ── 5. GET PATIENT INSURANCE DETAILS ─────────────────────────
+# Real response: {patientId, count, data: [{InsuranceCompany, PolicyNumber, ...}]}
+@app.route('/MyCallAi/patients/<pid>/insurance')
+def patient_insurance(pid):
+    log(f"🏥 تم جلب بيانات التأمين للمريض #{pid}")
     return jsonify({
-        "doctor_id": did,
-        "working_days": [
-            {"day_id": 1, "day": "الأحد",    "from": "09:00 AM", "to": "06:00 PM"},
-            {"day_id": 2, "day": "الاثنين",  "from": "09:00 AM", "to": "06:00 PM"},
-            {"day_id": 3, "day": "الثلاثاء", "from": "09:00 AM", "to": "03:00 PM"},
-            {"day_id": 4, "day": "الأربعاء", "from": "10:00 AM", "to": "05:00 PM"},
-            {"day_id": 5, "day": "الخميس",   "from": "09:00 AM", "to": "02:00 PM"}
+        "patientId": int(pid),
+        "count": 1,
+        "data": [
+            {
+                "InsuranceCompany": "",
+                "PolicyNumber": "46493329",
+                "MemberId": "123456",
+                "ClassName": "b+",
+                "PatientDeductable": "20 %",
+                "PatientDeductableMax": "0 S.R.",
+                "StartDate": "2025/07/01",
+                "EndDate": "2026/06/30"
+            }
         ]
     })
 
 
-# ─────────────────────────────────────────────────────────────
-# APPOINTMENT ENDPOINTS
-# ─────────────────────────────────────────────────────────────
+# ── 6. CHECK INSURANCE ELIGIBILITY ───────────────────────────
+# Real response: "Eligibile" (plain string, with their typo)
+@app.route('/MyCallAi/patients/<pid>/insurance/eligibility')
+def insurance_eligibility(pid):
+    log(f"🏥 تم التحقق من أهلية التأمين للمريض #{pid}")
+    return make_response(json.dumps("Eligibile"), 200, {'Content-Type': 'application/json'})
 
+
+# ── 7. GET SPECIALTIES LIST ──────────────────────────────────
+# Real response: {count, data: [{Id, NameArabic, NameEnglish}]}
+@app.route('/MyCallAi/specialties')
+def get_specialties():
+    log("📋 تم جلب قائمة التخصصات")
+    return jsonify({
+        "count": len(specialties),
+        "data": specialties
+    })
+
+
+# ── 8. GET DOCTORS BY SPECIALTY ──────────────────────────────
+# Real response: {specialtyId, count, data: [{Id, Code, ArabicName, EnglishName, SpecialtyId, SpecialtyName}]}
+@app.route('/MyCallAi/doctors')
+def get_doctors():
+    specialty_id = request.args.get('specialty_id')
+    if specialty_id:
+        result = [d for d in doctors if str(d['SpecialtyId']) == str(specialty_id)]
+    else:
+        result = doctors
+    log(f"👨‍⚕️ تم جلب قائمة الأطباء (التخصص: {specialty_id or 'الكل'})")
+    return jsonify({
+        "specialtyId": int(specialty_id) if specialty_id else None,
+        "count": len(result),
+        "data": result
+    })
+
+
+# ── 9. GET DOCTOR SCHEDULE ───────────────────────────────────
+# Real response: {doctorId, count, data: [{DoctorId, DayOfWeek, DayName, StartTime, EndTime, SlotMinutes}]}
+@app.route('/MyCallAi/doctors/<int:did>/schedule')
+def get_schedule(did):
+    doctor = find_doctor(did)
+    doc_schedule = schedules.get(did, [{"DoctorId": did, **s} for s in default_schedule])
+    log(f"🗓️ تم جلب جدول الطبيب: {doctor['ArabicName'] if doctor else f'#{did}'}")
+    return jsonify({
+        "doctorId": did,
+        "count": len(doc_schedule),
+        "data": doc_schedule
+    })
+
+
+# ── 10. GET AVAILABLE SLOTS ──────────────────────────────────
+# Real request: GET with body {app_dt_fmt: 20260311, doctorid: 108, day_id: 5}
+# Real response: [{DocotorID, SlotDate, StartTime, EndTime}]  (NOTE: DocotorID typo is real)
 @app.route('/MyCallAi/appointments/available', methods=['GET', 'POST'])
 def get_available():
-    # Accepts parameters from query string OR body — both work
-    data       = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True) or {}
     app_dt_fmt = request.args.get('app_dt_fmt') or data.get('app_dt_fmt')
-    doctorid   = request.args.get('doctorid')   or data.get('doctorid')
-    day_id     = request.args.get('day_id')     or data.get('day_id')
-    log(f"🕐 تم جلب المواعيد المتاحة | التاريخ: {app_dt_fmt} | الطبيب: {doctorid} | اليوم: {day_id}")
-    return jsonify([
-        {"fromtime": "09:00 AM", "endtime": "09:30 AM"},
-        {"fromtime": "10:00 AM", "endtime": "10:30 AM"},
-        {"fromtime": "11:00 AM", "endtime": "11:30 AM"},
-        {"fromtime": "01:00 PM", "endtime": "01:30 PM"},
-        {"fromtime": "03:00 PM", "endtime": "03:30 PM"},
-        {"fromtime": "05:00 PM", "endtime": "05:30 PM"}
-    ])
+    doctorid = request.args.get('doctorid') or data.get('doctorid')
+    day_id = request.args.get('day_id') or data.get('day_id')
+
+    # Convert app_dt_fmt (20260311) to date format (2026/03/11)
+    slot_date = "2026/03/15"  # default
+    if app_dt_fmt:
+        s = str(app_dt_fmt)
+        if len(s) == 8:
+            slot_date = f"{s[:4]}/{s[4:6]}/{s[6:]}"
+
+    slots = generate_slots(doctorid or "0", slot_date)
+    log(f"🕐 تم جلب المواعيد المتاحة | التاريخ: {slot_date} | الطبيب: {doctorid} | اليوم: {day_id}")
+    return jsonify(slots)
 
 
+# ── 11. HOLD APPOINTMENT SLOT ────────────────────────────────
+# Real request: {patientid, doctorid, fromtime, endtime, appointmentdate}
+# Real response: {"Status": "SUCCESS", "id": "48504"}
 @app.route('/MyCallAi/appointments/hold', methods=['POST'])
 def hold_appointment():
-    data     = request.get_json() or {}
-    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
-    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
-    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
-    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
-    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
-    patient  = find_patient(pid) if pid else None
-    doctor   = find_doctor(did)  if did  else None
+    global next_appointment_id
+    data = request.get_json() or {}
+
+    pid = data.get('patientid', '')
+    did = data.get('doctorid', '')
+    patient = find_patient(pid)
+    doctor = find_doctor(did) if did else None
+
+    new_id = next_appointment_id
+    next_appointment_id += 1
+
     appt = {
-        "id":           int(datetime.now().timestamp()),
-        "patient_id":   pid,
-        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else 'غير محدد',
-        "doctor_id":    did,
-        "doctor_name":  doctor['name'] if doctor else 'غير محدد',
-        "date":         date,
-        "fromtime":     fromtime,
-        "endtime":      endtime,
-        "status":       "held"
+        "AppointmentId": new_id,
+        "PatientId": str(pid),
+        "PatientName": patient['ArabicName'] if patient else 'غير محدد',
+        "PatientMobile": patient['Mobile'] if patient else '',
+        "DoctorId": int(did) if did else 0,
+        "DoctorName": doctor['ArabicName'] if doctor else 'غير محدد',
+        "AppointmentDate": data.get('appointmentdate', ''),
+        "StartTime": data.get('fromtime', ''),
+        "EndTime": data.get('endtime', ''),
+        "Status": "Waiting"
     }
     appointments.append(appt)
-    log(f"⏳ تم حجز موعد مؤقت لـ {appt['patient_name']} مع {appt['doctor_name']} | {date} | {fromtime}")
-    return jsonify({"appointment_id": appt['id'], "status": "held", "message": "تم حجز الموعد مؤقتاً"})
+    log(f"⏳ تم حجز موعد مؤقت لـ {appt['PatientName']} مع {appt['DoctorName']}")
+    return jsonify({"Status": "SUCCESS", "id": str(new_id)})
 
 
+# ── 12. CONFIRM APPOINTMENT ──────────────────────────────────
+# Real response: "Appointment is Confirmed" (plain string)
+@app.route('/MyCallAi/appointments/<int:aid>/confirm', methods=['POST'])
+def confirm_appointment(aid):
+    global appointments
+    appt = find_appointment(aid)
+    appointments = [dict(a, Status='Confirmed') if a['AppointmentId'] == aid else a for a in appointments]
+    name = appt['PatientName'] if appt else f"#{aid}"
+    log(f"✅ تم تأكيد الموعد لـ {name}")
+    return make_response(json.dumps("Appointment is Confirmed"), 200, {'Content-Type': 'application/json'})
+
+
+# ── 13. BOOK APPOINTMENT (DIRECT) ────────────────────────────
+# Real response: {"Status": "SUCCESS", "id": "48504"}
 @app.route('/MyCallAi/appointments', methods=['POST'])
 def create_appointment():
-    data     = request.get_json() or {}
-    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
-    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
-    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
-    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
-    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
-    patient  = find_patient(pid) if pid else None
-    doctor   = find_doctor(did)  if did  else None
+    global next_appointment_id
+    data = request.get_json() or {}
+
+    pid = data.get('patientid', '')
+    did = data.get('doctorid', '')
+    patient = find_patient(pid)
+    doctor = find_doctor(did) if did else None
+
+    new_id = next_appointment_id
+    next_appointment_id += 1
+
     appt = {
-        "id":           int(datetime.now().timestamp()),
-        "patient_id":   pid,
-        "patient_name": (patient.get('arabicname') or patient.get('englishname')) if patient else 'غير محدد',
-        "doctor_id":    did,
-        "doctor_name":  doctor['name'] if doctor else 'غير محدد',
-        "date":         date,
-        "fromtime":     fromtime,
-        "endtime":      endtime,
-        "status":       "booked"
+        "AppointmentId": new_id,
+        "PatientId": str(pid),
+        "PatientName": patient['ArabicName'] if patient else 'غير محدد',
+        "PatientMobile": patient['Mobile'] if patient else '',
+        "DoctorId": int(did) if did else 0,
+        "DoctorName": doctor['ArabicName'] if doctor else 'غير محدد',
+        "AppointmentDate": data.get('appointmentdate', ''),
+        "StartTime": data.get('fromtime', ''),
+        "EndTime": data.get('endtime', ''),
+        "Status": "Waiting"
     }
     appointments.append(appt)
-    log(f"📌 تم حجز موعد لـ {appt['patient_name']} مع {appt['doctor_name']} | {date} | {fromtime}")
-    return jsonify(appt), 201
+    log(f"📌 تم حجز موعد لـ {appt['PatientName']} مع {appt['DoctorName']}")
+    return jsonify({"Status": "SUCCESS", "id": str(new_id)})
 
 
-@app.route('/MyCallAi/appointments/<int:aid>')
+# ── 14. RESCHEDULE APPOINTMENT ───────────────────────────────
+# Real response: "Appointment is Rescheduled" (plain string, no body needed)
+@app.route('/MyCallAi/appointments/<int:aid>/reschedule', methods=['POST'])
+def reschedule_appointment(aid):
+    global appointments
+    appt = find_appointment(aid)
+    appointments = [dict(a, Status='Rescheduled') if a['AppointmentId'] == aid else a for a in appointments]
+    name = appt['PatientName'] if appt else f"#{aid}"
+    log(f"🔄 تم تعديل الموعد لـ {name}")
+    return make_response(json.dumps("Appointment is Rescheduled"), 200, {'Content-Type': 'application/json'})
+
+
+# ── 15. CANCEL APPOINTMENT ───────────────────────────────────
+# Real response: "Appointment is Canceled" (plain string, no body needed)
+@app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST'])
+def cancel_appointment(aid):
+    global appointments
+    appt = find_appointment(aid)
+    appointments = [dict(a, Status='Canceled') if a['AppointmentId'] == aid else a for a in appointments]
+    name = appt['PatientName'] if appt else f"#{aid}"
+    log(f"❌ تم إلغاء الموعد لـ {name}")
+    return make_response(json.dumps("Appointment is Canceled"), 200, {'Content-Type': 'application/json'})
+
+
+# ── 16. GET APPOINTMENT DETAILS ──────────────────────────────
+# Real response: {AppointmentId, PatientId, PatientName, PatientMobile, DoctorId, DoctorName, AppointmentDate, StartTime, EndTime, Status}
+@app.route('/MyCallAi/appointments/<int:aid>', methods=['GET'])
 def get_appointment(aid):
-    appt = next((a for a in appointments if a['id'] == aid), None)
+    appt = find_appointment(aid)
     if appt:
+        log(f"📋 تم جلب تفاصيل الموعد #{aid}")
         return jsonify(appt)
     return jsonify({"message": "Not found"}), 404
 
 
-@app.route('/MyCallAi/appointments/<int:aid>/confirm', methods=['POST'])
-def confirm_appointment(aid):
-    global appointments
-    appt = next((a for a in appointments if a['id'] == aid), None)
-    appointments = [dict(a, status='confirmed') if a['id'] == aid else a for a in appointments]
-    name = appt['patient_name'] if appt else f"#{aid}"
-    log(f"✅ تم تأكيد الموعد لـ {name}")
-    return jsonify({"appointment_id": aid, "status": "confirmed", "message": "تم تأكيد الموعد بنجاح"})
+# ── 17. ADD PATIENT NOTE / CALL SUMMARY ──────────────────────
+# Real response: "SUCCESS" (plain string)
+@app.route('/MyCallAi/patients/<pid>/notes', methods=['POST'])
+def add_note(pid):
+    data = request.get_json() or {}
+    patient = find_patient(pid)
+    note = {
+        "patient_id": pid,
+        "patient_name": patient['ArabicName'] if patient else f"#{pid}",
+        "notes": data.get('notes', ''),
+        "time": datetime.now().strftime("%I:%M %p")
+    }
+    notes.insert(0, note)
+    log(f"📝 تم حفظ ملاحظة للمريض #{pid}")
+    return make_response(json.dumps("SUCCESS"), 200, {'Content-Type': 'application/json'})
 
 
-@app.route('/MyCallAi/appointments/<int:aid>/cancel', methods=['POST', 'PUT'])
-def cancel_appointment(aid):
-    global appointments
-    appt = next((a for a in appointments if a['id'] == aid), None)
-    appointments = [dict(a, status='cancelled') if a['id'] == aid else a for a in appointments]
-    name = appt['patient_name'] if appt else f"#{aid}"
-    log(f"❌ تم إلغاء الموعد لـ {name}")
-    return jsonify({"appointment_id": aid, "status": "cancelled", "message": "تم إلغاء الموعد بنجاح"})
+# ── DATE HELPER (for agent to get correct date) ──────────────
+@app.route('/MyCallAi/today')
+def get_today():
+    from datetime import date, timedelta
+    today = date.today()
+    days_ar = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
+    return jsonify({
+        "today": today.strftime("%Y/%m/%d"),
+        "tomorrow": (today + timedelta(days=1)).strftime("%Y/%m/%d"),
+        "day_after": (today + timedelta(days=2)).strftime("%Y/%m/%d"),
+        "today_day_name": days_ar[today.isoweekday() % 7],
+        "today_day_id": today.isoweekday() % 7 + 1
+    })
 
 
-@app.route('/MyCallAi/appointments/<int:aid>/reschedule', methods=['POST', 'PUT'])
-def reschedule_appointment(aid):
-    global appointments
-    data     = request.get_json() or {}
-    pid      = get_val(data, 'patientid', 'patient_id', 'patientId')
-    did      = get_val(data, 'doctorid',  'doctor_id',  'doctorId')
-    fromtime = get_val(data, 'fromtime',  'from_time',  'fromTime')
-    endtime  = get_val(data, 'endtime',   'end_time',   'endTime')
-    date     = get_val(data, 'appointmentdate', 'appointment_date', 'date')
-    appt     = next((a for a in appointments if a['id'] == aid), None)
-    for a in appointments:
-        if a['id'] == aid:
-            if date:     a['date']     = date
-            if fromtime: a['fromtime'] = fromtime
-            if endtime:  a['endtime']  = endtime
-            a['status'] = 'rescheduled'
-    name = appt['patient_name'] if appt else f"#{aid}"
-    log(f"🔄 تم تعديل الموعد لـ {name} | {date} | {fromtime}")
-    return jsonify({"appointment_id": aid, "status": "rescheduled", "message": "تم تعديل الموعد بنجاح"})
-
-
-# ─────────────────────────────────────────────────────────────
-# MESSAGING ENDPOINTS
-# ─────────────────────────────────────────────────────────────
-
+# ── MESSAGING ENDPOINTS (still mock — not in real CRM yet) ───
 @app.route('/MyCallAi/messages/send', methods=['POST'])
 def send_message():
     data = request.get_json() or {}
     log(f"💬 تم إرسال رسالة إلى {data.get('to', 'غير محدد')}")
     return jsonify({"message_id": int(datetime.now().timestamp()), "status": "sent"})
 
-
 @app.route('/MyCallAi/messages/status/<mid>')
 def message_status(mid):
     return jsonify({"message_id": mid, "status": "delivered"})
-
 
 @app.route('/MyCallAi/webhooks/whatsapp', methods=['POST'])
 def whatsapp_webhook():
     data = request.get_json() or {}
     log(f"📲 رسالة واردة على واتساب من {data.get('from', 'غير محدد')}")
     return jsonify({"status": "received"})
+
+@app.route('/MyCallAi/patients/<pid>/consent', methods=['GET'])
+def get_consent(pid):
+    log(f"✅ تم التحقق من موافقة المريض #{pid}")
+    return jsonify({"patient_id": pid, "whatsapp_consent": True})
+
+@app.route('/MyCallAi/patients/<pid>/consent', methods=['POST'])
+def save_consent(pid):
+    log(f"✅ تم حفظ موافقة المريض #{pid}")
+    return jsonify({"status": "saved"})
 
 
 # ─────────────────────────────────────────────────────────────
