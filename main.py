@@ -594,15 +594,27 @@ def update_patient(pid):
     """Update patient data."""
     global patients
     data = request.get_json() or {}
+
+    # Map lowercase incoming keys → PascalCase stored keys
+    field_map = {
+        'arabicname':  'ArabicName',
+        'englishname': 'EnglishName',
+        'mobile':      'Mobile',
+        'idcard':      'IDCard',
+        'bithdate':    'BirthDate',
+        'gender':      'Gender'
+    }
+    mapped_data = {field_map.get(k.lower(), k): v for k, v in data.items()}
+
     found = False
     for i, p in enumerate(patients):
         if str(p['FileNo']) == str(pid):
-            patients[i] = {**p, **data}
+            patients[i] = {**p, **mapped_data}
             found = True
             break
     if found:
         log(f"✏️ تم تحديث بيانات المريض #{pid}")
-        return "SUCCESS"   # real CRM returns plain text
+        return "SUCCESS", 200, {'Content-Type': 'text/plain'}
     return jsonify({"message": "Patient not found"}), 404
 
 
