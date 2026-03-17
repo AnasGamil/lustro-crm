@@ -886,3 +886,54 @@ def reschedule_appointment(aid):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
+
+# ─────────────────────────────────────────────────────────────
+# REAL CRM PROXY — Forwards requests to Dentak
+# Solves 2 problems:
+#   1. SSL bypass (Dentak has invalid certificate)
+#   2. GET+body support (needed for checkinsurance & get_available_slots)
+# ─────────────────────────────────────────────────────────────
+
+import requests as req_lib
+import urllib3
+urllib3.disable_warnings()  # suppress SSL warnings in logs
+
+REAL_DENTAK_BASE = "https://lustro.dentech.site/DentechEtabibi/MyCallAi"
+
+@app.route('/real/<path:endpoint>', methods=['GET', 'POST'])
+def proxy_to_real_crm(endpoint):
+    """
+    Universal proxy to real Dentak CRM.
+    - Accepts any method from ElevenLabs
+    - Forwards to Dentak with SSL verification disabled
+    - Supports GET+body (unlike Cloudflare Workers)
+    - Returns Dentak's response exactly as-is
+    """
+    target_url = f"{REAL_DENTAK_BASE}/{endpoint}"
+
+    # Get JSON body if present
+    body = request.get_json(silent=True)
+
+    # Get query params if present
+    params = request.args.to_dict() if request.args else None
+
+    try:
+        resp = req_lib.request(
+            method=request.method,
+            url=target_url,
+            json=body if body else None,
+            params=params,
+            verify=False,   # SSL bypass — Dentak has invalid cert
+            timeout=20      # 20 second timeout — enough for Nphies (6s)
+        )
+
+        # Try to return as JSON, fall back to plain text
+        try:
+            return jsonify(resp.json()), resp.status_code
+        except Exception:
+            return resp.text, resp.status_code, {'Content-Type': 'text/plain'}
+
+    except Exception as e:
+        log(f"⚠️ Proxy error for /{endpoint}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
