@@ -920,7 +920,7 @@ def proxy_to_real_crm(endpoint):
 
     try:
         resp = req_lib.request(
-            method=request.method,
+            method='GET' if 'checkinsurance' in endpoint else request.method,
             url=target_url,
             json=body if body else None,
             params=params,
