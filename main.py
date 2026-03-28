@@ -925,7 +925,7 @@ def proxy_to_real_crm(endpoint):
             json=body if body else None,
             params=params,
             verify=False,   # SSL bypass — Dentak has invalid cert
-            timeout=20      # 20 second timeout — enough for Nphies (6s)
+            timeout=60      # 20 second timeout — enough for Nphies (6s)
         )
 
         # Try to return as JSON, fall back to plain text
