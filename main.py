@@ -930,7 +930,17 @@ def proxy_to_real_crm(endpoint):
 
         # Try to return as JSON, fall back to plain text
         try:
-            return jsonify(resp.json()), resp.status_code
+            result = resp.json()
+
+            # Filter removed doctors + shuffle for distribution
+            if 'doctors' in endpoint and isinstance(result, dict) and 'data' in result:
+                REMOVED = ["هنادي الحارثي", "طارق حلاوة", "أنمار كنسارة", "محمد الموصلي", "ماهر كشكول", "اسراء الشريف", "زينة الشهري", "ضحى", "سامي العواض", "اروى النوري", "فاطمة الناظر", "فهد الناظر", "ابتسام", "Ebtesam", "احمد السيد", "Ahmed ElSayed", "العنود الهلالي", "Al Anoud", "شذى حواري", "احمد بن حريب", "سلمي عصام", "رائد شتا", "فارس", "ريان", "عبد الله كوشك", "أسماء الغامدي", "أيمن بخاري"]
+                result["data"] = [d for d in result["data"] if not any(name in d.get("ArabicName", "") for name in REMOVED)]
+                result["count"] = len(result["data"])
+                import random
+                random.shuffle(result["data"])
+
+            return jsonify(result), resp.status_code
         except Exception:
             return resp.text, resp.status_code, {'Content-Type': 'text/plain'}
 
